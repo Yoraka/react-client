@@ -6,6 +6,7 @@ import { Alert, AlertTitle, AlertDescription } from './components/ui/alert';
 import AIChat from './components/AIChat';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
+import rehypeStringify from 'rehype-stringify';
 import 'highlight.js/styles/github.css';
 import { InlineMath, BlockMath } from 'react-katex';
 import 'katex/dist/katex.min.css';
@@ -133,11 +134,52 @@ function App() {
     }
   };
 
+    // 辅助函数：递归地将对象转换为字符串
+  const stringifyContent = (content) => {
+    if (typeof content === 'string') return content;
+    if (typeof content === 'number' || typeof content === 'boolean') return String(content);
+    if (React.isValidElement(content)) {
+      return React.Children.toArray(content.props.children).map(stringifyContent).join('');
+    }
+    if (Array.isArray(content)) {
+      return content.map(stringifyContent).join('');
+    }
+    if (content && typeof content === 'object') {
+      return JSON.stringify(content);
+    }
+    return '';
+  };
+
+  const MathRenderer = ({ children }) => {
+    if (!children) return null;
+    
+    const content = stringifyContent(children);
+    
+    const parts = content.split(/(\$\$[\s\S]+?\$\$|\$[\s\S]+?\$)/g);
+    return parts.map((part, index) => {
+      if (part.startsWith('$$') && part.endsWith('$$')) {
+        return <BlockMath key={index} math={part.slice(2, -2)} />;
+      } else if (part.startsWith('$') && part.endsWith('$')) {
+        return <InlineMath key={index} math={part.slice(1, -1)} />;
+      } else {
+        return part;
+      }
+    });
+  };
+
   const renderMessage = (message) => {
     if (typeof message !== 'string') {
       console.error('Invalid message type:', message);
       return <span>Error: Invalid message format</span>;
     }
+
+    // 预处理消息，处理独立的数学公式行和内联公式
+    const processedMessage = message.replace(/^\$(.+?)\$$/gm, (match, formula) => {
+      return `<div class="block-math">${formula}</div>`;
+    }).replace(/\$(.+?)\$/g, (match, formula) => {
+      return `<span class="inline-math">${formula}</span>`;
+    });
+    
     return (
       <ReactMarkdown
         rehypePlugins={[rehypeHighlight]}
@@ -157,60 +199,24 @@ function App() {
               </code>
             );
           },
-          // 自定义有序列表渲染
-          ol: ({node, ...props}) => {
-            return <ol className="list-decimal list-inside" {...props} />;
+          p: ({node, children, ...props}) => {
+            return (
+              <p className="whitespace-pre-wrap pl-8 -indent-8" {...props}>
+                <MathRenderer>{children}</MathRenderer>
+              </p>
+            );
           },
-          // 自定义列表项渲染
-          li: ({node, ...props}) => {
-            return <li className="mb-2" {...props} />;
+          ol: ({node, ...props}) => {
+            return <ol className="list-decimal list-inside pl-8" {...props} />;
+          },
+          li: ({node, children, ...props}) => {
+            return (
+              <li className="mb-2 pl-8 -indent-8" {...props}>
+                <MathRenderer>{children}</MathRenderer>
+              </li>
+            );
           }
         }}
-        remarkPlugins={[
-          () => (tree) => {
-            const inlineMathRegex = /\$([^\$]+)\$/g;
-            const blockMathRegex = /\$\$([^\$]+)\$\$/g;
-            
-            function visit(node) {
-              if (node.type === 'text') {
-                const inlineMatches = node.value.match(inlineMathRegex);
-                const blockMatches = node.value.match(blockMathRegex);
-                
-                if (inlineMatches) {
-                  const parts = node.value.split(inlineMathRegex);
-                  const newChildren = [];
-                  parts.forEach((part, index) => {
-                    if (index % 2 === 0) {
-                      if (part) newChildren.push({ type: 'text', value: part });
-                    } else {
-                      newChildren.push({ type: 'inlineMath', value: part });
-                    }
-                  });
-                  node.type = 'paragraph';
-                  node.children = newChildren;
-                } else if (blockMatches) {
-                  const parts = node.value.split(blockMathRegex);
-                  const newChildren = [];
-                  parts.forEach((part, index) => {
-                    if (index % 2 === 0) {
-                      if (part) newChildren.push({ type: 'text', value: part });
-                    } else {
-                      newChildren.push({ type: 'math', value: part });
-                    }
-                  });
-                  node.type = 'paragraph';
-                  node.children = newChildren;
-                }
-              }
-              
-              if (node.children) {
-                node.children.forEach(visit);
-              }
-            }
-            
-            visit(tree);
-          }
-        ]}
       >
         {message}
       </ReactMarkdown>
