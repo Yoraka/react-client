@@ -9,6 +9,7 @@ import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github.css';
 import { InlineMath, BlockMath } from 'react-katex';
 import 'katex/dist/katex.min.css';
+import CodeBlock from './components/CodeBlock'; // 确保路径正确
 
 function App() {
   const [input, setInput] = useState('');
@@ -67,12 +68,25 @@ function App() {
           (partialContent) => {
             setChatHistory(prev => {
               const newHistory = [...prev];
-              newHistory[newHistory.length - 1].content = String(partialContent);
+              const lastMessage = newHistory[newHistory.length - 1];
+              if (lastMessage.type === 'ai') {
+                // 替换最后一条 AI 消息的内容，而不是追加
+                lastMessage.content = partialContent;
+              }
               return newHistory;
             });
           },
           (fullContent) => {
             console.log('完整的 AI 响应:', fullContent);
+            setChatHistory(prev => {
+              const newHistory = [...prev];
+              const lastMessage = newHistory[newHistory.length - 1];
+              if (lastMessage.type === 'ai') {
+                // 确保最后一条消息包含完整的响应
+                lastMessage.content = fullContent;
+              }
+              return newHistory;
+            });
             setIsGenerating(false);
           }
         );
@@ -132,29 +146,25 @@ function App() {
             const match = /language-(\w+)/.exec(className || '');
             const language = match ? match[1] : '';
             
-            // 确保 children 是数组或转换为数组
-            const childArray = Array.isArray(children) ? children : [children];
+            // 使用 extractTextContent 函数处理每个 child
+            const value = extractTextContent(children);
             
-            // 使用新的 extractTextContent 函数处理每个 child
-            const value = childArray.map(extractTextContent).join('');
-            console.log('value:', value);
-            
-            return !inline && match ? (
-              <code className={className}>
-                {value.trim()}
-              </code>
-              /* <CodeBlock 
-                language={language} 
-                value={value} // 去除可能的多余空白字符
-              /> */
+            return !inline && language ? (
+              <CodeBlock language={language} value={value} />
             ) : (
               <code className={className} {...props}>
-                {value.trim()}
+                {value}
               </code>
             );
           },
-          inlineMath: ({value}) => <InlineMath math={value} />,
-          math: ({value}) => <BlockMath math={value} />
+          // 自定义有序列表渲染
+          ol: ({node, ...props}) => {
+            return <ol className="list-decimal list-inside" {...props} />;
+          },
+          // 自定义列表项渲染
+          li: ({node, ...props}) => {
+            return <li className="mb-2" {...props} />;
+          }
         }}
         remarkPlugins={[
           () => (tree) => {
@@ -171,9 +181,9 @@ function App() {
                   const newChildren = [];
                   parts.forEach((part, index) => {
                     if (index % 2 === 0) {
-                      if (part) newChildren.push({type: 'text', value: part});
+                      if (part) newChildren.push({ type: 'text', value: part });
                     } else {
-                      newChildren.push({type: 'inlineMath', value: part});
+                      newChildren.push({ type: 'inlineMath', value: part });
                     }
                   });
                   node.type = 'paragraph';
@@ -183,9 +193,9 @@ function App() {
                   const newChildren = [];
                   parts.forEach((part, index) => {
                     if (index % 2 === 0) {
-                      if (part) newChildren.push({type: 'text', value: part});
+                      if (part) newChildren.push({ type: 'text', value: part });
                     } else {
-                      newChildren.push({type: 'math', value: part});
+                      newChildren.push({ type: 'math', value: part });
                     }
                   });
                   node.type = 'paragraph';
@@ -205,6 +215,25 @@ function App() {
         {message}
       </ReactMarkdown>
     );
+  };
+
+  const extractTextContent = (child) => {
+    if (typeof child === 'string') {
+      return child;
+    } else if (typeof child === 'number' || typeof child === 'boolean') {
+      return String(child);
+    } else if (React.isValidElement(child)) {
+      if (typeof child.props.children === 'string') {
+        return child.props.children;
+      } else if (Array.isArray(child.props.children)) {
+        return child.props.children.map(extractTextContent).join('');
+      }
+    } else if (Array.isArray(child)) {
+      return child.map(extractTextContent).join('');
+    } else if (child && typeof child === 'object') {
+      return JSON.stringify(child);
+    }
+    return '';
   };
 
   const scrollToBottom = () => {
@@ -368,62 +397,4 @@ function App() {
   );
 }
 
-const extractTextContent = (child) => {
-  if (typeof child === 'string') {
-    return child;
-  } else if (typeof child === 'number' || typeof child === 'boolean') {
-    return String(child);
-  } else if (React.isValidElement(child)) {
-    if (typeof child.props.children === 'string') {
-      return child.props.children;
-    } else if (Array.isArray(child.props.children)) {
-      return child.props.children.map(extractTextContent).join('');
-    }
-  } else if (Array.isArray(child)) {
-    return child.map(extractTextContent).join('');
-  } else if (child && typeof child === 'object') {
-    return JSON.stringify(child);
-  }
-  return '';
-};
-
-const CodeBlock = ({ language, value }) => {
-  const [isCopied, setIsCopied] = useState(false);
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(value).then(() => {
-      setIsCopied(true);
-      setTimeout(() => setIsCopied(false), 2000);
-    });
-  };
-
-  // 确保 value 是字符串，如果不是，尝试转换
-  const codeValue = typeof value === 'string' 
-    ? value 
-    : (value != null ? JSON.stringify(value, null, 2) : '');
-
-  if (!codeValue.trim()) {
-    console.warn('codeValue is empty');
-    return null;
-  }
-  
-  return (
-    <div className="bg-gray-800 rounded-lg overflow-hidden">
-      <div className="flex justify-between items-center px-4 py-2 bg-gray-700">
-        <span className="text-sm text-gray-300">{language}</span>
-        <button 
-          onClick={handleCopy} 
-          className="text-sm text-gray-300 hover:text-white transition-colors"
-        >
-          {isCopied ? '已复制' : '复制'}
-        </button>
-      </div>
-      <pre className="p-4 overflow-x-auto bg-code-bg">
-        <code className={`language-${language} text-sm text-code-text font-mono`}>
-          {codeValue}
-        </code>
-      </pre>
-    </div>
-  );
-};
 export default App;

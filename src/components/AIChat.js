@@ -1,3 +1,4 @@
+// AIChat.js
 const MAX_MESSAGE_SIZE = 65536;
 const TIMEOUT_SECONDS = 30;
 
@@ -72,10 +73,8 @@ const AIChat = {
             return;
           }
 
-          // 将接收到的文本添加到响应中，替换 [object Object]
-          const cleanedData = data.replace(/\[object Object\]/g, '');
-          fullResponse += cleanedData;
-          onUpdate(fullResponse);
+          fullResponse += data;
+          onUpdate(fullResponse);  // 发送完整的响应给前端
         };
 
         signal.addEventListener('abort', () => {
